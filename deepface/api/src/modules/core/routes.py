@@ -33,12 +33,12 @@ def recursive_convert(data):
 
 logger = Logger()
 
-blueprint = Blueprint("routes", __name__)
+api_blueprint = Blueprint("api", __name__)
 
 # pylint: disable=no-else-return, broad-except
 
 
-@blueprint.route("/")
+@api_blueprint.route("/")
 def home():
     return f"<h1>Welcome to DeepFace API v{DeepFace.__version__}!</h1>"
 
@@ -90,7 +90,7 @@ def extract_image_from_request(img_key: str) -> Union[str, np.ndarray]:
     raise ValueError(f"'{img_key}' not found in request in either json or form data")
 
 
-@blueprint.route("/represent", methods=["POST"])
+@api_blueprint.route("/represent", methods=["POST"])
 def represent():
     input_args = (request.is_json and request.get_json()) or (
         request.form and request.form.to_dict()
@@ -116,7 +116,7 @@ def represent():
     return obj
 
 
-@blueprint.route("/verify", methods=["POST"])
+@api_blueprint.route("/verify", methods=["POST"])
 def verify():
     input_args = (request.is_json and request.get_json()) or (
         request.form and request.form.to_dict()
@@ -148,7 +148,7 @@ def verify():
     return verification
 
 
-@blueprint.route("/analyze", methods=["POST"])
+@api_blueprint.route("/analyze", methods=["POST"])
 def analyze():
     input_args = (request.is_json and request.get_json()) or (
         request.form and request.form.to_dict()
@@ -189,50 +189,3 @@ def analyze():
     print('hakimahmed',jsonify(recursive_convert(demographies)))
     return jsonify(recursive_convert(demographies))
     return demographies
-
-
-@blueprint.route("/liveness", methods=["POST"])
-def liveness():
-    """
-    كشف الحيوية للوجه (liveness / anti-spoofing)
-    """
-    try:
-        # استخرج الصورة من الطلب (نفس منطق extract_image_from_request)
-        if request.files:
-            file = request.files.get("img")
-            if file is None or file.filename == "":
-                return jsonify({"error": "No image uploaded."}), 400
-            img = file
-        elif request.is_json or request.form:
-            input_args = request.get_json() or request.form.to_dict()
-            img = input_args.get("img")
-            if not img:
-                return jsonify({"error": "No image provided."}), 400
-        else:
-            return jsonify({"error": "No image in request."}), 400
-
-        # كشف الوجه والحيوية عبر extract_faces
-        faces = detection.extract_faces(
-            img_path=img,
-            detector_backend="opencv",
-            enforce_detection=True,
-            align=True,
-            anti_spoofing=True
-        )
-
-        # لنأخذ أول وجه فقط (إذا الصورة فيها أكثر من وجه)
-        if not faces:
-            return jsonify({"error": "No face detected."}), 404
-
-        # اختصر الرد وركّز فقط على الحيوية والثقة ومعلومات الوجه
-        main = faces[0]
-        result = {
-            "is_real": main.get("is_real"),
-            "antispoof_score": main.get("antispoof_score"),
-            "confidence": main.get("confidence"),
-            "facial_area": main.get("facial_area"),
-        }
-        return jsonify(recursive_convert(result)), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500

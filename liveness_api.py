@@ -1,13 +1,11 @@
 # liveness_api.py
 
-from flask import Flask, request, jsonify
+from flask import Blueprint, request, jsonify
 import cv2
 import numpy as np
 from deepface.modules import detection
-from flask_cors import CORS
 
-app = Flask(__name__)
-CORS(app)
+liveness_blueprint = Blueprint('liveness', __name__)
 
 def analyze_frame(frame):
     faces = detection.extract_faces(
@@ -29,7 +27,7 @@ def analyze_frame(frame):
         }
     return None
 
-@app.route("/analyze", methods=["POST"])
+@liveness_blueprint.route("/liveness", methods=["POST"])
 def analyze():
     file = request.files['image']
     img_bytes = file.read()
@@ -40,6 +38,3 @@ def analyze():
         return jsonify(result)
     else:
         return jsonify({"error": "No face detected"}), 400
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, debug=True)
