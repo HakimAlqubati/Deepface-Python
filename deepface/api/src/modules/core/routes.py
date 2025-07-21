@@ -196,7 +196,7 @@ def analyze():
  
 
 
-EMPLOYEE_API = "http://localhost:8080/api/employees/simple-list"
+EMPLOYEE_API = "https://workbench.ressystem.com/api/employees/simple-list"
 DISTANCE_THRESHOLD = 0.55  # Adjust based on your testing
 
 @api_blueprint.route("/recognize", methods=["POST"])
