@@ -4,6 +4,9 @@ from typing import Union
 # 3rd party dependencies
 from flask import Blueprint, request
 import numpy as np
+import requests
+import tempfile
+import os
 
 # project dependencies
 from deepface import DeepFace
@@ -13,7 +16,7 @@ from deepface.commons.logger import Logger
 
 from flask import jsonify
 from deepface.modules import detection
-
+ 
 
 def to_serializable(val):
     if isinstance(val, np.ndarray):
@@ -189,3 +192,85 @@ def analyze():
     print('hakimahmed',jsonify(recursive_convert(demographies)))
     return jsonify(recursive_convert(demographies))
     return demographies
+
+ 
+
+
+EMPLOYEE_API = "http://localhost:8080/api/employees/simple-list"
+DISTANCE_THRESHOLD = 0.55  # Adjust based on your testing
+
+@api_blueprint.route("/recognize", methods=["POST"])
+def recognize():
+    # 1. Receive uploaded face image
+    if 'img' not in request.files:
+        return jsonify({"error": "Please upload an image in the 'img' field."}), 400
+
+    uploaded_file = request.files['img']
+    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+    uploaded_file.save(temp_input.name)
+    temp_input.close()
+
+    # 2. Fetch employee list from Laravel API
+    try:
+        employees = requests.get(EMPLOYEE_API).json()
+    except Exception as e:
+        os.remove(temp_input.name)
+        return jsonify({"error": "Failed to fetch employees.", "details": str(e)}), 500
+
+    # 3. Compare with each employee's avatar, track the best match
+    best_distance = None
+    best_employee = None
+
+    for emp in employees:
+        avatar_url = emp["avatar_url"]
+        try:
+            # Download avatar temporarily
+            response = requests.get(avatar_url, stream=True, timeout=6)
+            if response.status_code != 200:
+                continue
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_avatar:
+                for chunk in response.iter_content(1024):
+                    temp_avatar.write(chunk)
+                temp_avatar_path = temp_avatar.name
+
+            # Run DeepFace verification
+            result = DeepFace.verify(
+                img1_path=temp_input.name,
+                img2_path=temp_avatar_path,
+                model_name="Facenet",     # Change model as needed
+                detector_backend="opencv",
+                enforce_detection=False   # Set True if you want strict detection
+            )
+            distance = result["distance"]
+
+            if (best_distance is None) or (distance < best_distance):
+                best_distance = distance
+                best_employee = emp
+
+            os.remove(temp_avatar_path)
+
+        except Exception as ex:
+            continue
+
+    os.remove(temp_input.name)
+
+    # 4. Return result
+    if best_employee and best_distance < DISTANCE_THRESHOLD:
+        return jsonify({
+            "matched": True,
+            "distance": best_distance,
+            "employee": best_employee
+        })
+    else:
+        return jsonify({
+            "matched": False,
+            "distance": best_distance,
+            "message": "No sufficiently close match found."
+        })
+from flask import Flask
+
+app = Flask(__name__)
+app.register_blueprint(api_blueprint, url_prefix="/api")
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
