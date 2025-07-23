@@ -16,4 +16,5 @@ app.register_blueprint(api_blueprint, url_prefix="/api")
 
 if __name__ == "__main__":
     # يمكنك تغيير المنفذ إذا أردت (8000 مثلاً)
-    app.run(host="0.0.0.0", port=443, ssl_context=("mycert.pem", "mykey.pem"))
+    app.run(host="0.0.0.0", port=5000, ssl_context=("mycert.pem", "mykey.pem"))
+
