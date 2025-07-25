@@ -156,6 +156,8 @@ def analyze():
     input_args = (request.is_json and request.get_json()) or (
         request.form and request.form.to_dict()
     )
+    print('sdf')
+
 
     try:
         img = extract_image_from_request("img")
@@ -274,3 +276,67 @@ app = Flask(__name__)
 app.register_blueprint(api_blueprint, url_prefix="/api")
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000)
+
+
+
+from scipy.spatial.distance import cosine
+
+@api_blueprint.route("/recognize-v2", methods=["POST"])
+def recognize_v2():
+    if 'img' not in request.files:
+        return jsonify({"error": "Please upload an image in the 'img' field."}), 400
+
+    uploaded_file = request.files['img']
+    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+    uploaded_file.save(temp_input.name)
+    temp_input.close()
+
+    try:
+        query_embedding = DeepFace.represent(
+            img_path=temp_input.name,
+            model_name="Facenet",
+            detector_backend="opencv",
+            enforce_detection=False
+        )[0]['embedding']
+    except Exception as e:
+        os.remove(temp_input.name)
+        return jsonify({"error": "Failed to process input image", "details": str(e)}), 500
+
+    os.remove(temp_input.name)
+
+    try:
+        response = requests.get("https://workbench.ressystem.com/api/face-data")
+        employee_embeddings = response.json()
+    except Exception as e:
+        return jsonify({"error": "Failed to fetch stored embeddings", "details": str(e)}), 500
+
+    best_employee = None
+    best_distance = float("inf")
+
+    for record in employee_embeddings:
+        stored_embedding = record.get("embedding")
+        if not stored_embedding:
+            continue
+        try:
+            distance = cosine(query_embedding, stored_embedding)
+        except Exception:
+            continue
+
+        if distance < best_distance:
+            best_distance = distance
+            best_employee = record
+
+    if best_employee and best_distance < DISTANCE_THRESHOLD:
+        return jsonify(recursive_convert({
+            "matched": True,
+            "distance": best_distance,
+            "employee": best_employee
+        }))
+    else:
+        return jsonify(recursive_convert({
+            "matched": False,
+            "distance": best_distance,
+            "message": "No sufficiently close match found."
+        }))
+
+    
