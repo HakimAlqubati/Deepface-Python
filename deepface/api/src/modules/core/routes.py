@@ -355,11 +355,13 @@ def recognize_v2():
         return jsonify({
             "matched": True,
             "distance": best_distance,
-            "employee": best_match
+            "employee": best_match,
+            "query_embedding": query_embedding,
         })
     else:
         return jsonify({
             "matched": False,
             "distance": min(matches_below_threshold),
             "message": "No sufficiently close match found."
+            "query_embedding": query_embedding,
         })
