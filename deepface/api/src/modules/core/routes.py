@@ -271,10 +271,7 @@ def recognize():
             "message": "No sufficiently close match found."
         })
 from flask import Flask
-
-app = Flask(__name__)
-app.register_blueprint(api_blueprint, url_prefix="/api")
-
+ 
 
 from scipy.spatial.distance import cosine
 
@@ -335,8 +332,4 @@ def recognize_v2():
             "distance": best_distance,
             "message": "No sufficiently close match found."
         }))
-
-    
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
 
