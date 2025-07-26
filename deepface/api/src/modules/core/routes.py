@@ -339,6 +339,7 @@ def recognize_v2():
         # شرط المطابقة
         if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 3) or \
            (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
+        # if (1==1)
 
             min_distance = min(matches_below_threshold)
             if min_distance < best_distance:
@@ -360,6 +361,6 @@ def recognize_v2():
     else:
         return jsonify({
             "matched": False,
-            "distance": None if best_distance == float("inf") else best_distance,
+            "distance":min_distance,
             "message": "No sufficiently close match found."
         })
