@@ -339,7 +339,7 @@ def recognize_v2():
         # شرط المطابقة
         # if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 3) or \
         #    (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
-        if (1==1)
+        if (1==1):
 
             min_distance = min(matches_below_threshold)
             if min_distance < best_distance:
