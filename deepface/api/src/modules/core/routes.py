@@ -274,62 +274,98 @@ from flask import Flask
  
 
 from scipy.spatial.distance import cosine
+ 
+from flask import request, jsonify
+import tempfile, os, requests, numpy as np
+from deepface import DeepFace
+from scipy.spatial.distance import cosine
+from collections import defaultdict
+
+# إعدادات
+DISTANCE_THRESHOLD = 0.6
+REQUIRE_MULTI_MATCH = True  # ← غيّرها إلى False إذا أردت الاكتفاء بصورة واحدة فقط
 
 @api_blueprint.route("/recognize-v2", methods=["POST"])
 def recognize_v2():
+    # 1. التحقق من وجود الصورة
     if 'img' not in request.files:
         return jsonify({"error": "Please upload an image in the 'img' field."}), 400
 
     uploaded_file = request.files['img']
-    temp_input = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
-    uploaded_file.save(temp_input.name)
-    temp_input.close()
+
+    # 2. حفظ الصورة مؤقتًا
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
+        uploaded_file.save(temp_input.name)
+        temp_input_path = temp_input.name
 
     try:
+        # 3. استخراج الـ embedding من الصورة المرسلة
         query_embedding = DeepFace.represent(
-            img_path=temp_input.name,
+            img_path=temp_input_path,
             model_name="Facenet",
             detector_backend="opencv",
             enforce_detection=False
         )[0]['embedding']
     except Exception as e:
-        os.remove(temp_input.name)
+        os.remove(temp_input_path)
         return jsonify({"error": "Failed to process input image", "details": str(e)}), 500
 
-    os.remove(temp_input.name)
+    os.remove(temp_input_path)
 
     try:
-        response = requests.get("https://workbench.ressystem.com/api/face-data")
-        employee_embeddings = response.json()
+        # 4. جلب بيانات الموظفين من API
+        response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
+        all_records = response.json()
     except Exception as e:
         return jsonify({"error": "Failed to fetch stored embeddings", "details": str(e)}), 500
 
-    best_employee = None
+    # 5. تنظيم الصور حسب الموظف
+    employees_map = defaultdict(list)
+    for record in all_records:
+        emp_id = record.get("employee_id")
+        embedding = record.get("embedding")
+        if emp_id and embedding:
+            employees_map[emp_id].append(record)
+
+    # 6. المقارنة واختيار أفضل موظف
+    best_match = None
     best_distance = float("inf")
 
-    for record in employee_embeddings:
-        stored_embedding = record.get("embedding")
-        if not stored_embedding:
-            continue
-        try:
-            distance = cosine(query_embedding, stored_embedding)
-        except Exception:
+    for emp_id, records in employees_map.items():
+        distances = []
+
+        for record in records:
+            try:
+                stored_embedding = np.array(record["embedding"], dtype=float)
+                distance = cosine(query_embedding, stored_embedding)
+                distances.append(distance)
+            except Exception:
+                continue
+
+        if not distances:
             continue
 
-        if distance < best_distance:
-            best_distance = distance
-            best_employee = record
+        matches_below_threshold = [d for d in distances if d < DISTANCE_THRESHOLD]
 
-    if best_employee and best_distance < DISTANCE_THRESHOLD:
-        return jsonify(recursive_convert({
+        # شرط المطابقة
+        if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 2) or \
+           (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
+            
+            min_distance = min(matches_below_threshold)
+            if min_distance < best_distance:
+                best_distance = min_distance
+                best_match = records[0]  # نرجّع أول صورة فقط كممثل
+
+    # 7. إرجاع النتيجة النهائية
+    if best_match:
+        return jsonify({
             "matched": True,
             "distance": best_distance,
-            "employee": best_employee
-        }))
+            "employee": best_match
+        })
     else:
-        return jsonify(recursive_convert({
+        return jsonify({
             "matched": False,
             "distance": best_distance,
             "message": "No sufficiently close match found."
-        }))
-
+        })
