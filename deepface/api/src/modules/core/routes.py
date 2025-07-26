@@ -360,6 +360,6 @@ def recognize_v2():
     else:
         return jsonify({
             "matched": False,
-            "distance": best_distance,
+            "distance": None if best_distance == float("inf") else best_distance,
             "message": "No sufficiently close match found."
         })
