@@ -354,13 +354,14 @@ def recognize_v2():
             min_distance = min(matches_below_threshold)
             if min_distance < best_distance:
                 best_distance = min_distance
-                best_match = records[0]  # نرجّع أول صورة فقط كممثل
+                best_match = dict(records[0])
+                best_match.pop("embedding", None)
 
     # 7. إرجاع النتيجة النهائية
     if best_match:
         return jsonify({
             "matched": True,
-            # "distance": best_distance,
+            "distance": best_distance,
             "employee": best_match
         })
     else:
