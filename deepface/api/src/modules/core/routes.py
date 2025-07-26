@@ -272,16 +272,11 @@ def recognize():
         })
 from flask import Flask
  
-
 from scipy.spatial.distance import cosine
- 
 from flask import request, jsonify
 import tempfile, os, requests, numpy as np
 from deepface import DeepFace
-from scipy.spatial.distance import cosine
-from collections import defaultdict
 
-# إعدادات
 DISTANCE_THRESHOLD = 0.55
 REQUIRE_MULTI_MATCH = True  # ← غيّرها إلى False إذا أردت الاكتفاء بصورة واحدة فقط
 
@@ -313,30 +308,24 @@ def recognize_v2():
     os.remove(temp_input_path)
 
     try:
-        # 4. جلب بيانات الموظفين من API
+        # 4. جلب بيانات الموظفين من API (مجمعة مسبقًا حسب employee_id)
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
         all_records = response.json()
     except Exception as e:
         return jsonify({"error": "Failed to fetch stored embeddings", "details": str(e)}), 500
 
-    # 5. تنظيم الصور حسب الموظف
-    employees_map = defaultdict(list)
-    for record in all_records:
-        emp_id = record.get("employee_id")
-        embedding = record.get("embedding")
-        if emp_id and embedding:
-            employees_map[emp_id].append(record)
-
-    # 6. المقارنة واختيار أفضل موظف
+    # 5. المقارنة واختيار أفضل موظف
     best_match = None
     best_distance = float("inf")
 
-    for emp_id, records in employees_map.items():
-        distances = []
+    for record in all_records:
+        emp_id = record.get("employee_id")
+        embeddings = record.get("embeddings", [])
 
-        for record in records:
+        distances = []
+        for emb in embeddings:
             try:
-                stored_embedding = np.array(record["embedding"], dtype=float)
+                stored_embedding = np.array(emb, dtype=float)
                 distance = cosine(query_embedding, stored_embedding)
                 distances.append(distance)
             except Exception:
@@ -350,14 +339,18 @@ def recognize_v2():
         # شرط المطابقة
         if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 2) or \
            (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
-            
+
             min_distance = min(matches_below_threshold)
             if min_distance < best_distance:
                 best_distance = min_distance
-                best_match = dict(records[0])
-                best_match.pop("embedding", None)
+                best_match = {
+                    "employee_id": record.get("employee_id"),
+                    "employee_name": record.get("employee_name"),
+                    "employee_email": record.get("employee_email"),
+                    "employee_branch_id": record.get("employee_branch_id"),
+                }
 
-    # 7. إرجاع النتيجة النهائية
+    # 6. إرجاع النتيجة النهائية
     if best_match:
         return jsonify({
             "matched": True,
