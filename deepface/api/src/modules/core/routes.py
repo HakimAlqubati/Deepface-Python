@@ -271,12 +271,13 @@ def recognize():
             "message": "No sufficiently close match found."
         })
 from flask import Flask
- 
+
 from scipy.spatial.distance import cosine
 from flask import request, jsonify
 import tempfile, os, requests, numpy as np
 from deepface import DeepFace
 
+# إعدادات
 DISTANCE_THRESHOLD = 0.55
 REQUIRE_MULTI_MATCH = True  # ← غيّرها إلى False إذا أردت الاكتفاء بصورة واحدة فقط
 
@@ -294,7 +295,7 @@ def recognize_v2():
         temp_input_path = temp_input.name
 
     try:
-        # 3. استخراج الـ embedding من الصورة المرسلة
+        # 3. استخراج البصمة من الصورة المرسلة
         query_embedding = DeepFace.represent(
             img_path=temp_input_path,
             model_name="Facenet",
@@ -308,26 +309,40 @@ def recognize_v2():
     os.remove(temp_input_path)
 
     try:
-        # 4. جلب بيانات الموظفين من API (مجمعة مسبقًا حسب employee_id)
+        # 4. جلب بيانات الموظفين من API (بصمات مجمعة per employee)
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
         all_records = response.json()
     except Exception as e:
         return jsonify({"error": "Failed to fetch stored embeddings", "details": str(e)}), 500
 
-    # 5. المقارنة واختيار أفضل موظف
+    # 5. المقارنة واختيار أفضل موظف + تسجيل كل المقارنات
+    comparisons = []
     best_match = None
     best_distance = float("inf")
 
     for record in all_records:
         emp_id = record.get("employee_id")
+        emp_name = record.get("employee_name")
         embeddings = record.get("embeddings", [])
 
         distances = []
-        for emb in embeddings:
+        for idx, emb in enumerate(embeddings):
             try:
                 stored_embedding = np.array(emb, dtype=float)
+                if stored_embedding.shape != np.array(query_embedding).shape:
+                    continue
+
                 distance = cosine(query_embedding, stored_embedding)
                 distances.append(distance)
+
+                # نسجل كل المقارنات للرجوع بها في الـ response
+                comparisons.append({
+                    "employee_id": emp_id,
+                    "employee_name": emp_name,
+                    "embedding_index": idx,
+                    "distance": distance
+                })
+
             except Exception:
                 continue
 
@@ -336,7 +351,6 @@ def recognize_v2():
 
         matches_below_threshold = [d for d in distances if d < DISTANCE_THRESHOLD]
 
-        # شرط المطابقة
         if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 2) or \
            (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
 
@@ -344,10 +358,10 @@ def recognize_v2():
             if min_distance < best_distance:
                 best_distance = min_distance
                 best_match = {
-                    "employee_id": record.get("employee_id"),
-                    "employee_name": record.get("employee_name"),
+                    "employee_id": emp_id,
+                    "employee_name": emp_name,
                     "employee_email": record.get("employee_email"),
-                    "employee_branch_id": record.get("employee_branch_id"),
+                    "employee_branch_id": record.get("employee_branch_id")
                 }
 
     # 6. إرجاع النتيجة النهائية
@@ -355,11 +369,13 @@ def recognize_v2():
         return jsonify({
             "matched": True,
             "distance": best_distance,
-            "employee": best_match
+            "employee": best_match,
+            "comparisons": comparisons
         })
     else:
         return jsonify({
             "matched": False,
             "distance": best_distance,
-            "message": "No sufficiently close match found."
+            "message": "No sufficiently close match found.",
+            "comparisons": comparisons
         })
