@@ -360,7 +360,7 @@ def recognize_v2():
     if best_match:
         return jsonify({
             "matched": True,
-            "distance": best_distance,
+            # "distance": best_distance,
             "employee": best_match
         })
     else:
