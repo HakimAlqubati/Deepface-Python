@@ -282,7 +282,7 @@ from scipy.spatial.distance import cosine
 from collections import defaultdict
 
 # إعدادات
-DISTANCE_THRESHOLD = 0.6
+DISTANCE_THRESHOLD = 0.55
 REQUIRE_MULTI_MATCH = True  # ← غيّرها إلى False إذا أردت الاكتفاء بصورة واحدة فقط
 
 @api_blueprint.route("/recognize-v2", methods=["POST"])
