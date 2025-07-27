@@ -442,25 +442,20 @@ def recognize_by_id():
         }), 200
 
 
-    # # 5. النتيجة
-    # matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
-    # matched = len(matches_below_threshold) > 0
-    # best_distance = min(distances)
+    # 5. النتيجة
+    matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
+    matched = len(matches_below_threshold) > 0
+    best_distance = min(distances)
 
 
     # 6. حساب المتوسط والمسافة مع المتوسط
     try:
-        average_embedding = np.mean([
-            np.array(e, dtype=float) 
-            for e in embeddings if np.linalg.norm(e) >= 1e-3
-        ], axis=0)
+        average_embedding = np.mean([np.array(e, dtype=float) for e in embeddings if np.linalg.norm(e) >= 1e-3], axis=0)
         avg_distance = cosine(query_embedding, average_embedding)
         average_embedding = average_embedding.tolist()
-        matched = avg_distance <= DISTANCE_THRESHOLD
     except Exception:
         average_embedding = None
         avg_distance = None
-        matched = False
 
     return jsonify({
         "matched": matched,
