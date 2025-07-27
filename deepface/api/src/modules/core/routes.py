@@ -277,7 +277,7 @@ from flask import request, jsonify
 import tempfile, os, requests, numpy as np
 from deepface import DeepFace
 
-DISTANCE_THRESHOLD = 0.50
+DISTANCE_THRESHOLD = 0.40
 REQUIRED_MATCH_COUNT = 3
 
 @api_blueprint.route("/recognize-v2", methods=["POST"])
