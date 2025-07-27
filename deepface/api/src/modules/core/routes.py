@@ -365,3 +365,80 @@ def recognize_v2():
             "message": "No sufficiently close match found.",
             "query_embedding": query_embedding,
         })
+
+
+
+from flask import request, jsonify
+import tempfile, os, requests
+from deepface import DeepFace
+
+DISTANCE_THRESHOLD = 0.45
+REQUIRE_MULTI_MATCH = True
+
+@api_blueprint.route("/recognize-v3", methods=["POST"])
+def recognize_v3():
+    if 'img' not in request.files:
+        return jsonify({"error": "Please upload an image in the 'img' field."}), 400
+
+    uploaded_file = request.files['img']
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
+        uploaded_file.save(temp_input.name)
+        temp_input_path = temp_input.name
+
+    try:
+        response = requests.get("https://workbench.ressystem.com/api/face-data-with-urls", timeout=10)
+        all_records = response.json()
+    except Exception as e:
+        os.remove(temp_input_path)
+        return jsonify({"error": "Failed to fetch stored images", "details": str(e)}), 500
+
+    best_match = None
+    best_distance = float("inf")
+
+    for record in all_records:
+        image_urls = record.get("image_urls", [])
+        distances = []
+
+        for url in image_urls:
+            try:
+                result = DeepFace.verify(
+                    img1_path=temp_input_path,
+                    img2_path=url,
+                    model_name="Facenet",
+                    detector_backend="opencv",
+                    enforce_detection=False
+                )
+
+                distance = result["distance"]
+                if distance < DISTANCE_THRESHOLD:
+                    distances.append(distance)
+            except Exception:
+                continue
+
+        if (REQUIRE_MULTI_MATCH and len(distances) >= 3) or \
+           (not REQUIRE_MULTI_MATCH and len(distances) >= 1):
+
+            min_distance = min(distances)
+            if min_distance < best_distance:
+                best_distance = min_distance
+                best_match = {
+                    "employee_id": record.get("employee_id"),
+                    "employee_name": record.get("employee_name"),
+                    "employee_email": record.get("employee_email"),
+                    "employee_branch_id": record.get("employee_branch_id"),
+                }
+
+    os.remove(temp_input_path)
+
+    if best_match:
+        return jsonify({
+            "matched": True,
+            "distance": best_distance,
+            "employee": best_match
+        })
+    else:
+        return jsonify({
+            "matched": False,
+            "distance": None if best_distance == float("inf") else best_distance,
+            "message": "No sufficiently close match found."
+        })
