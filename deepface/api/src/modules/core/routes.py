@@ -271,7 +271,6 @@ def recognize():
             "message": "No sufficiently close match found."
         })
 from flask import Flask
- 
 from scipy.spatial.distance import cosine
 from flask import request, jsonify
 import tempfile, os, requests, numpy as np
@@ -308,7 +307,7 @@ def recognize_v2():
     os.remove(temp_input_path)
 
     try:
-        # 4. جلب بيانات الموظفين من API (مجمعة مسبقًا حسب employee_id)
+        # 4. جلب بيانات الموظفين من API
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
         all_records = response.json()
     except Exception as e:
@@ -317,12 +316,12 @@ def recognize_v2():
     # 5. المقارنة واختيار أفضل موظف
     best_match = None
     best_distance = float("inf")
+    best_match_distances = []
 
     for record in all_records:
-        emp_id = record.get("employee_id")
         embeddings = record.get("embeddings", [])
-
         distances = []
+
         for emb in embeddings:
             try:
                 stored_embedding = np.array(emb, dtype=float)
@@ -336,7 +335,6 @@ def recognize_v2():
 
         matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
 
-        # شرط المطابقة
         if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 3) or \
            (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
 
@@ -349,19 +347,21 @@ def recognize_v2():
                     "employee_email": record.get("employee_email"),
                     "employee_branch_id": record.get("employee_branch_id"),
                 }
+                best_match_distances = distances
 
     # 6. إرجاع النتيجة النهائية
     if best_match:
         return jsonify({
             "matched": True,
             "distance": best_distance,
-            "employee": best_match, 
-            "distances": distances,
+            "employee": best_match,
+            "distances": best_match_distances,
         })
     else:
         return jsonify({
             "matched": False,
             "distance": None if best_distance == float("inf") else best_distance,
             "message": "No sufficiently close match found.",
-            "distances": distances,
+            "distances": [],
         })
+ 
