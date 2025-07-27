@@ -364,7 +364,6 @@ def recognize_v2():
             "distances": [],
         })
 
-
 from scipy.spatial.distance import cosine
 from flask import request, jsonify
 import tempfile, os, requests, numpy as np
@@ -400,7 +399,7 @@ def recognize_by_id():
         os.remove(temp_input_path)
 
     try:
-        # 3. جلب جميع بيانات الموظفين
+        # 3. جلب بيانات الموظفين
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
         all_records = response.json()
     except Exception as e:
@@ -413,26 +412,31 @@ def recognize_by_id():
         return jsonify({"error": "Employee not found"}), 404
 
     embeddings = employee_record.get("embeddings", [])
-    distances = []
 
-    for emb in embeddings:
-        try:
-            stored_embedding = np.array(emb, dtype=float)
-            if np.linalg.norm(stored_embedding) < 1e-3:
-                continue
-            distance = cosine(query_embedding, stored_embedding)
-            distances.append(distance)
-        except Exception:
-            continue
+    # 5. حساب البصمة المتوسطة والمطابقة
+    try:
+        valid_embeddings = [
+            np.array(e, dtype=float)
+            for e in embeddings
+            if isinstance(e, list) and len(e) >= 64 and np.linalg.norm(e) >= 1e-3
+        ]
 
-    if not distances:
+        if not valid_embeddings:
+            raise ValueError("No valid embeddings found for this employee.")
+
+        average_embedding = np.mean(valid_embeddings, axis=0)
+        avg_distance = cosine(query_embedding, average_embedding)
+        matched = avg_distance <= DISTANCE_THRESHOLD
+        average_embedding = average_embedding.tolist()
+
+    except Exception as e:
         return jsonify({
             "matched": False,
-            "message": "No valid embeddings found for this employee.",
+            "message": str(e),
+            "avg_distance": None,
             "query_embedding": query_embedding,
+            "average_embedding": None,
             "stored_embeddings": embeddings,
-            "distances": [],
-            "best_distance": None,
             "employee": {
                 "employee_id": employee_record.get("employee_id"),
                 "employee_name": employee_record.get("employee_name"),
@@ -441,34 +445,18 @@ def recognize_by_id():
             }
         }), 200
 
-
-    # 5. النتيجة
-    matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
-    matched = len(matches_below_threshold) > 0
-    best_distance = min(distances)
-
-
-    # 6. حساب المتوسط والمسافة مع المتوسط
-    try:
-        average_embedding = np.mean([np.array(e, dtype=float) for e in embeddings if np.linalg.norm(e) >= 1e-3], axis=0)
-        avg_distance = cosine(query_embedding, average_embedding)
-        average_embedding = average_embedding.tolist()
-    except Exception:
-        average_embedding = None
-        avg_distance = None
-
+    # 6. الرد النهائي
     return jsonify({
         "matched": matched,
-        "best_distance": best_distance,
+        "matched_by": "average_only",
         "avg_distance": avg_distance,
-        "distances": distances,
         "query_embedding": query_embedding,
         "average_embedding": average_embedding,
-        "stored_embeddings": embeddings,    # ← جميع بصمات الموظف من face-data
+        "stored_embeddings": embeddings,
         "employee": {
             "employee_id": employee_record.get("employee_id"),
             "employee_name": employee_record.get("employee_name"),
             "employee_email": employee_record.get("employee_email"),
             "employee_branch_id": employee_record.get("employee_branch_id"),
         }
-    })
+    }), 200
