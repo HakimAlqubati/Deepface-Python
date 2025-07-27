@@ -363,3 +363,89 @@ def recognize_v2():
             "message": "No sufficiently close match found.",
             "distances": [],
         })
+
+
+from scipy.spatial.distance import cosine
+from flask import request, jsonify
+import tempfile, os, requests, numpy as np
+from deepface import DeepFace
+
+DISTANCE_THRESHOLD = 0.40
+
+@api_blueprint.route("/recognize-by-id", methods=["POST"])
+def recognize_by_id():
+    if 'img' not in request.files or 'employee_id' not in request.form:
+        return jsonify({"error": "Missing 'img' or 'employee_id' field."}), 400
+
+    employee_id = request.form['employee_id']
+    uploaded_file = request.files['img']
+
+    # 1. حفظ الصورة مؤقتًا
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
+        uploaded_file.save(temp_input.name)
+        temp_input_path = temp_input.name
+
+    try:
+        # 2. استخراج بصمة الصورة
+        query_embedding = DeepFace.represent(
+            img_path=temp_input_path,
+            model_name="Facenet",
+            detector_backend="opencv",
+            enforce_detection=False
+        )[0]['embedding']
+    except Exception as e:
+        os.remove(temp_input_path)
+        return jsonify({"error": "Failed to process input image", "details": str(e)}), 500
+    finally:
+        os.remove(temp_input_path)
+
+    try:
+        # 3. جلب جميع بيانات الموظفين
+        response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
+        all_records = response.json()
+    except Exception as e:
+        return jsonify({"error": "Failed to fetch face data", "details": str(e)}), 500
+
+    # 4. فلترة الموظف المطلوب
+    employee_record = next((r for r in all_records if str(r.get("employee_id")) == str(employee_id)), None)
+
+    if not employee_record:
+        return jsonify({"error": "Employee not found"}), 404
+
+    embeddings = employee_record.get("embeddings", [])
+    distances = []
+
+    for emb in embeddings:
+        try:
+            stored_embedding = np.array(emb, dtype=float)
+            if np.linalg.norm(stored_embedding) < 1e-3:
+                continue
+            distance = cosine(query_embedding, stored_embedding)
+            distances.append(distance)
+        except Exception:
+            continue
+
+    if not distances:
+        return jsonify({
+            "matched": False,
+            "message": "No valid embeddings found for this employee.",
+            "employee": employee_record,
+            "distances": []
+        }), 200
+
+    # 5. النتيجة
+    matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
+    matched = len(matches_below_threshold) > 0
+    best_distance = min(distances)
+
+    return jsonify({
+        "matched": matched,
+        "best_distance": best_distance,
+        "distances": distances,
+        "employee": {
+            "employee_id": employee_record.get("employee_id"),
+            "employee_name": employee_record.get("employee_name"),
+            "employee_email": employee_record.get("employee_email"),
+            "employee_branch_id": employee_record.get("employee_branch_id"),
+        }
+    })
