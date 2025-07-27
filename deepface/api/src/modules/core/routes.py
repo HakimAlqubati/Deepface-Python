@@ -277,8 +277,8 @@ from flask import request, jsonify
 import tempfile, os, requests, numpy as np
 from deepface import DeepFace
 
-DISTANCE_THRESHOLD = 0.40  # ← ضبط العتبة بدقة أعلى
-REQUIRED_MATCH_COUNT = 3   # ← نحتاج على الأقل 3 صور متطابقة
+DISTANCE_THRESHOLD = 0.40
+REQUIRED_MATCH_COUNT = 3
 
 @api_blueprint.route("/recognize-v2", methods=["POST"])
 def recognize_v2():
@@ -303,8 +303,8 @@ def recognize_v2():
     except Exception as e:
         os.remove(temp_input_path)
         return jsonify({"error": "Failed to process input image", "details": str(e)}), 500
-
-    os.remove(temp_input_path)
+    finally:
+        os.remove(temp_input_path)
 
     try:
         # 3. جلب بيانات الموظفين
@@ -315,6 +315,7 @@ def recognize_v2():
 
     best_match = None
     best_distance = float("inf")
+    best_distances = []
 
     for record in all_records:
         emp_id = record.get("employee_id")
@@ -324,11 +325,8 @@ def recognize_v2():
         for emb in embeddings:
             try:
                 stored_embedding = np.array(emb, dtype=float)
-
-                # تجاهل البصمات غير الطبيعية (مثل 0.0, 0.0,...)
                 if np.linalg.norm(stored_embedding) < 1e-3:
                     continue
-
                 distance = cosine(query_embedding, stored_embedding)
                 distances.append(distance)
             except Exception:
@@ -339,7 +337,6 @@ def recognize_v2():
 
         matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
 
-        # شرط المطابقة: على الأقل 3 صور تطابق
         if len(matches_below_threshold) >= REQUIRED_MATCH_COUNT:
             avg_distance = sum(matches_below_threshold) / len(matches_below_threshold)
             if avg_distance < best_distance:
@@ -350,22 +347,19 @@ def recognize_v2():
                     "employee_email": record.get("employee_email"),
                     "employee_branch_id": record.get("employee_branch_id"),
                 }
+                best_distances = distances.copy()  # ← هنا الحل الحقيقي
 
-        # طباعة للتشخيص (اختياري)
-        print(f"[EMP {emp_id}] Matches: {len(matches_below_threshold)}, Distances: {distances}")
-
-    # 4. النتيجة النهائية
     if best_match:
         return jsonify({
             "matched": True,
             "distance": best_distance,
             "employee": best_match,
-            "distances": distances,
+            "distances": best_distances,
         })
     else:
         return jsonify({
             "matched": False,
             "distance": None if best_distance == float("inf") else best_distance,
             "message": "No sufficiently close match found.",
-            "distances": distances,
+            "distances": [],
         })
