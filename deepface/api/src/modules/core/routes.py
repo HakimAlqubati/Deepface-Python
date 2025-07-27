@@ -334,7 +334,7 @@ def recognize_v2():
         if not distances:
             continue
 
-        matches_below_threshold = [d for d in distances if d < DISTANCE_THRESHOLD]
+        matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
 
         # شرط المطابقة
         if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 3) or \
