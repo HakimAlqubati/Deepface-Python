@@ -429,9 +429,18 @@ def recognize_by_id():
         return jsonify({
             "matched": False,
             "message": "No valid embeddings found for this employee.",
-            "employee": employee_record,
-            "distances": []
+            "query_embedding": query_embedding,
+            "stored_embeddings": embeddings,
+            "distances": [],
+            "best_distance": None,
+            "employee": {
+                "employee_id": employee_record.get("employee_id"),
+                "employee_name": employee_record.get("employee_name"),
+                "employee_email": employee_record.get("employee_email"),
+                "employee_branch_id": employee_record.get("employee_branch_id"),
+            }
         }), 200
+
 
     # 5. النتيجة
     matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
@@ -442,6 +451,8 @@ def recognize_by_id():
         "matched": matched,
         "best_distance": best_distance,
         "distances": distances,
+        "query_embedding": query_embedding,  # ← البصمة المستخرجة من الصورة
+        "stored_embeddings": embeddings,    # ← جميع بصمات الموظف من face-data
         "employee": {
             "employee_id": employee_record.get("employee_id"),
             "employee_name": employee_record.get("employee_name"),
