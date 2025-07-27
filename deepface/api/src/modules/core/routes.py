@@ -447,11 +447,23 @@ def recognize_by_id():
     matched = len(matches_below_threshold) > 0
     best_distance = min(distances)
 
+
+    # 6. حساب المتوسط والمسافة مع المتوسط
+    try:
+        average_embedding = np.mean([np.array(e, dtype=float) for e in embeddings if np.linalg.norm(e) >= 1e-3], axis=0)
+        avg_distance = cosine(query_embedding, average_embedding)
+        average_embedding = average_embedding.tolist()
+    except Exception:
+        average_embedding = None
+        avg_distance = None
+
     return jsonify({
         "matched": matched,
         "best_distance": best_distance,
+        "avg_distance": avg_distance,
         "distances": distances,
-        "query_embedding": query_embedding,  # ← البصمة المستخرجة من الصورة
+        "query_embedding": query_embedding,
+        "average_embedding": average_embedding,
         "stored_embeddings": embeddings,    # ← جميع بصمات الموظف من face-data
         "employee": {
             "employee_id": employee_record.get("employee_id"),
