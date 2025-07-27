@@ -472,3 +472,91 @@ def recognize_by_id():
             "employee_branch_id": employee_record.get("employee_branch_id"),
         }
     })
+
+
+from scipy.spatial.distance import cosine
+from flask import request, jsonify
+import tempfile, os, requests, numpy as np
+from deepface import DeepFace
+
+DISTANCE_THRESHOLD = 0.40  # العتبة للمطابقة
+
+@api_blueprint.route("/recognize-by-avg", methods=["POST"])
+def recognize_by_average_distance():
+    if 'img' not in request.files:
+        return jsonify({"error": "Missing 'img' field."}), 400
+
+    uploaded_file = request.files['img']
+
+    # 1. حفظ الصورة مؤقتًا
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
+        uploaded_file.save(temp_input.name)
+        temp_input_path = temp_input.name
+
+    try:
+        # 2. استخراج البصمة من الصورة
+        query_embedding = DeepFace.represent(
+            img_path=temp_input_path,
+            model_name="Facenet",
+            detector_backend="opencv",
+            enforce_detection=False
+        )[0]['embedding']
+    except Exception as e:
+        os.remove(temp_input_path)
+        return jsonify({"error": "Failed to extract embedding", "details": str(e)}), 500
+    finally:
+        os.remove(temp_input_path)
+
+    try:
+        # 3. جلب بيانات جميع الموظفين
+        response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
+        all_records = response.json()
+    except Exception as e:
+        return jsonify({"error": "Failed to fetch face data", "details": str(e)}), 500
+
+    # 4. حساب متوسط البصمات لكل موظف ثم نحسب المسافة مع الصورة المطلوبة
+    results = []
+    for record in all_records:
+        embeddings = record.get("embeddings", [])
+        valid_embeddings = [np.array(e, dtype=float) for e in embeddings if np.linalg.norm(e) >= 1e-3]
+
+        if not valid_embeddings:
+            continue
+
+        try:
+            avg_embedding = np.mean(valid_embeddings, axis=0)
+            distance = cosine(query_embedding, avg_embedding)
+
+            results.append({
+                "employee_id": record.get("employee_id"),
+                "employee_name": record.get("employee_name"),
+                "employee_email": record.get("employee_email"),
+                "employee_branch_id": record.get("employee_branch_id"),
+                "avg_distance": distance,
+                "num_embeddings": len(valid_embeddings)
+            })
+        except Exception:
+            continue
+
+    # 5. فلترة أقرب موظف
+    if not results:
+        return jsonify({
+            "matched": False,
+            "message": "No valid employee embeddings found.",
+            "query_embedding": query_embedding,
+            "results": []
+        }), 200
+
+    # 6. البحث عن أقل avg_distance
+    results = sorted(results, key=lambda x: x['avg_distance'])
+    best_match = results[0]
+    matched = best_match['avg_distance'] <= DISTANCE_THRESHOLD
+
+    return jsonify({
+        "matched": matched,
+        "best_match": best_match if matched else None,
+        "best_distance": best_match['avg_distance'],
+        "threshold": DISTANCE_THRESHOLD,
+        "query_embedding": query_embedding,
+        "all_results": results
+    })
