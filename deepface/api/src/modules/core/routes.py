@@ -25,6 +25,8 @@ def to_serializable(val):
         return float(val)
     if isinstance(val, (np.int32, np.int64)):
         return int(val)
+    if isinstance(val, (np.bool_)):
+        return bool(val)
     return val
 
 def recursive_convert(data):
@@ -550,13 +552,15 @@ def recognize_by_average_distance():
     # 6. البحث عن أقل avg_distance
     results = sorted(results, key=lambda x: x['avg_distance'])
     best_match = results[0]
-    matched = best_match['avg_distance'] <= DISTANCE_THRESHOLD
+    matched = bool(best_match['avg_distance'] <= DISTANCE_THRESHOLD)
+    best_match_serialized = {k: to_serializable(v) for k, v in best_match.items()}
+    results_serialized = [{k: to_serializable(v) for k, v in r.items()} for r in results]
 
     return jsonify({
         "matched": matched,
-        "best_match": best_match if matched else None,
-        "best_distance": best_match['avg_distance'],
-        "threshold": DISTANCE_THRESHOLD,
-        "query_embedding": query_embedding,
-        "all_results": results
+        "best_match": best_match_serialized if matched else None,
+        "best_distance": float(best_match['avg_distance']),
+        "threshold": float(DISTANCE_THRESHOLD),
+        "query_embedding": [float(x) for x in query_embedding],
+        "all_results": results_serialized
     })
