@@ -271,29 +271,29 @@ def recognize():
             "message": "No sufficiently close match found."
         })
 from flask import Flask
+
 from scipy.spatial.distance import cosine
 from flask import request, jsonify
 import tempfile, os, requests, numpy as np
 from deepface import DeepFace
 
-DISTANCE_THRESHOLD = 0.46
-REQUIRE_MULTI_MATCH = True  # ← غيّرها إلى False إذا أردت الاكتفاء بصورة واحدة فقط
+DISTANCE_THRESHOLD = 0.40  # ← ضبط العتبة بدقة أعلى
+REQUIRED_MATCH_COUNT = 3   # ← نحتاج على الأقل 3 صور متطابقة
 
 @api_blueprint.route("/recognize-v2", methods=["POST"])
 def recognize_v2():
-    # 1. التحقق من وجود الصورة
     if 'img' not in request.files:
         return jsonify({"error": "Please upload an image in the 'img' field."}), 400
 
     uploaded_file = request.files['img']
 
-    # 2. حفظ الصورة مؤقتًا
+    # 1. حفظ الصورة مؤقتًا
     with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
         uploaded_file.save(temp_input.name)
         temp_input_path = temp_input.name
 
     try:
-        # 3. استخراج الـ embedding من الصورة المرسلة
+        # 2. استخراج البصمة
         query_embedding = DeepFace.represent(
             img_path=temp_input_path,
             model_name="Facenet",
@@ -307,24 +307,28 @@ def recognize_v2():
     os.remove(temp_input_path)
 
     try:
-        # 4. جلب بيانات الموظفين من API
+        # 3. جلب بيانات الموظفين
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
         all_records = response.json()
     except Exception as e:
         return jsonify({"error": "Failed to fetch stored embeddings", "details": str(e)}), 500
 
-    # 5. المقارنة واختيار أفضل موظف
     best_match = None
     best_distance = float("inf")
-    best_match_distances = []
 
     for record in all_records:
+        emp_id = record.get("employee_id")
         embeddings = record.get("embeddings", [])
-        distances = []
 
+        distances = []
         for emb in embeddings:
             try:
                 stored_embedding = np.array(emb, dtype=float)
+
+                # تجاهل البصمات غير الطبيعية (مثل 0.0, 0.0,...)
+                if np.linalg.norm(stored_embedding) < 1e-3:
+                    continue
+
                 distance = cosine(query_embedding, stored_embedding)
                 distances.append(distance)
             except Exception:
@@ -335,33 +339,31 @@ def recognize_v2():
 
         matches_below_threshold = [d for d in distances if d <= DISTANCE_THRESHOLD]
 
-        if (REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 3) or \
-           (not REQUIRE_MULTI_MATCH and len(matches_below_threshold) >= 1):
-
-            min_distance = min(matches_below_threshold)
-            if min_distance < best_distance:
-                best_distance = min_distance
+        # شرط المطابقة: على الأقل 3 صور تطابق
+        if len(matches_below_threshold) >= REQUIRED_MATCH_COUNT:
+            avg_distance = sum(matches_below_threshold) / len(matches_below_threshold)
+            if avg_distance < best_distance:
+                best_distance = avg_distance
                 best_match = {
                     "employee_id": record.get("employee_id"),
                     "employee_name": record.get("employee_name"),
                     "employee_email": record.get("employee_email"),
                     "employee_branch_id": record.get("employee_branch_id"),
                 }
-                best_match_distances = distances
 
-    # 6. إرجاع النتيجة النهائية
+        # طباعة للتشخيص (اختياري)
+        print(f"[EMP {emp_id}] Matches: {len(matches_below_threshold)}, Distances: {distances}")
+
+    # 4. النتيجة النهائية
     if best_match:
         return jsonify({
             "matched": True,
             "distance": best_distance,
             "employee": best_match,
-            "distances": best_match_distances,
         })
     else:
         return jsonify({
             "matched": False,
             "distance": None if best_distance == float("inf") else best_distance,
             "message": "No sufficiently close match found.",
-            "distances": [],
         })
- 
