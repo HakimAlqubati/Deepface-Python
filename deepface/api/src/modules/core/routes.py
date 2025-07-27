@@ -564,3 +564,97 @@ def recognize_by_average_distance():
         "query_embedding": [float(x) for x in query_embedding],
         "all_results": results_serialized
     })
+
+
+DISTANCE_THRESHOLD = 0.40
+DISTANCE_MARGIN = 0.03  # الحد الأدنى للفارق بين الأقرب والثاني
+
+@api_blueprint.route("/recognize-by-precise-match", methods=["POST"])
+def recognize_by_precise_match():
+    if 'img' not in request.files:
+        return jsonify({"error": "Missing 'img' field."}), 400
+
+    uploaded_file = request.files['img']
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as temp_input:
+        uploaded_file.save(temp_input.name)
+        temp_input_path = temp_input.name
+
+    try:
+        query_embedding = DeepFace.represent(
+            img_path=temp_input_path,
+            model_name="Facenet",
+            detector_backend="opencv",
+            enforce_detection=False
+        )[0]['embedding']
+    except Exception as e:
+        os.remove(temp_input_path)
+        return jsonify({"error": "Failed to extract embedding", "details": str(e)}), 500
+    finally:
+        os.remove(temp_input_path)
+
+    try:
+        response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
+        all_records = response.json()
+    except Exception as e:
+        return jsonify({"error": "Failed to fetch face data", "details": str(e)}), 500
+
+    results = []
+
+    for record in all_records:
+        embeddings = record.get("embeddings", [])
+        valid_embeddings = [np.array(e, dtype=float) for e in embeddings if np.linalg.norm(e) >= 1e-3]
+
+        if not valid_embeddings:
+            continue
+
+        distances = [cosine(query_embedding, emb) for emb in valid_embeddings]
+        avg_distance = float(np.mean(distances))
+        min_distance = float(np.min(distances))
+
+        results.append({
+            "employee_id": record.get("employee_id"),
+            "employee_name": record.get("employee_name"),
+            "employee_email": record.get("employee_email"),
+            "employee_branch_id": record.get("employee_branch_id"),
+            "min_distance": min_distance,
+            "avg_distance": avg_distance,
+            "num_embeddings": len(valid_embeddings)
+        })
+
+    if not results:
+        return jsonify({"matched": False, "message": "No valid data found"}), 200
+
+    # ترتيب حسب أقرب مطابقة
+    results = sorted(results, key=lambda r: r['min_distance'])
+
+    best = results[0]
+    second = results[1] if len(results) > 1 else None
+
+    matched = (
+        best['min_distance'] <= DISTANCE_THRESHOLD and
+        (second is None or (second['min_distance'] - best['min_distance'] >= DISTANCE_MARGIN))
+    )
+
+    def to_serializable(val):
+        if isinstance(val, np.ndarray):
+            return val.tolist()
+        if isinstance(val, (np.float32, np.float64)):
+            return float(val)
+        if isinstance(val, (np.int32, np.int64)):
+            return int(val)
+        if isinstance(val, (np.bool_)):
+            return bool(val)
+        return val
+
+    best_serialized = {k: to_serializable(v) for k, v in best.items()}
+    all_serialized = [{k: to_serializable(v) for k, v in r.items()} for r in results]
+
+    return jsonify({
+        "matched": matched,
+        "best_match": best_serialized if matched else None,
+        "threshold": DISTANCE_THRESHOLD,
+        "margin_required": DISTANCE_MARGIN,
+        "query_embedding": [float(x) for x in query_embedding],
+        "all_results": all_serialized
+    })
