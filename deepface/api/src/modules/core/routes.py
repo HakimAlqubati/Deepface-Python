@@ -362,6 +362,6 @@ def recognize_v2():
         return jsonify({
             "matched": False,
             "distance": min(matches_below_threshold),
-            "message": "No sufficiently close match found."
+            "message": "No sufficiently close match found.",
             "query_embedding": query_embedding,
         })
