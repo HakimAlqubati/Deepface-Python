@@ -394,7 +394,10 @@ def recognize_by_id():
         )[0]['embedding']
     except Exception as e:
         os.remove(temp_input_path)
-        return jsonify({"error": "Failed to process input image", "details": str(e)}), 500
+        return jsonify({
+            "error": "Failed to extract query embedding",
+            "details": str(e)
+        }), 500
     finally:
         os.remove(temp_input_path)
 
@@ -406,33 +409,24 @@ def recognize_by_id():
         return jsonify({"error": "Failed to fetch face data", "details": str(e)}), 500
 
     # 4. فلترة الموظف المطلوب
-    employee_record = next((r for r in all_records if str(r.get("employee_id")) == str(employee_id)), None)
+    employee_record = next(
+        (r for r in all_records if str(r.get("employee_id")) == str(employee_id)), None
+    )
 
     if not employee_record:
         return jsonify({"error": "Employee not found"}), 404
 
     embeddings = employee_record.get("embeddings", [])
+    valid_embeddings = [
+        np.array(e, dtype=float)
+        for e in embeddings
+        if isinstance(e, list) and len(e) >= 64 and np.linalg.norm(e) >= 1e-3
+    ]
 
-    # 5. حساب البصمة المتوسطة والمطابقة
-    try:
-        valid_embeddings = [
-            np.array(e, dtype=float)
-            for e in embeddings
-            if isinstance(e, list) and len(e) >= 64 and np.linalg.norm(e) >= 1e-3
-        ]
-
-        if not valid_embeddings:
-            raise ValueError("No valid embeddings found for this employee.")
-
-        average_embedding = np.mean(valid_embeddings, axis=0)
-        avg_distance = cosine(query_embedding, average_embedding)
-        matched = avg_distance <= DISTANCE_THRESHOLD
-        average_embedding = average_embedding.tolist()
-
-    except Exception as e:
+    if not valid_embeddings:
         return jsonify({
             "matched": False,
-            "message": str(e),
+            "message": "No valid embeddings found for this employee.",
             "avg_distance": None,
             "query_embedding": query_embedding,
             "average_embedding": None,
@@ -445,18 +439,39 @@ def recognize_by_id():
             }
         }), 200
 
-    # 6. الرد النهائي
-    return jsonify({
-        "matched": matched,
-        "matched_by": "average_only",
-        "avg_distance": avg_distance,
-        "query_embedding": query_embedding,
-        "average_embedding": average_embedding,
-        "stored_embeddings": embeddings,
-        "employee": {
-            "employee_id": employee_record.get("employee_id"),
-            "employee_name": employee_record.get("employee_name"),
-            "employee_email": employee_record.get("employee_email"),
-            "employee_branch_id": employee_record.get("employee_branch_id"),
-        }
-    }), 200
+    try:
+        average_embedding = np.mean(valid_embeddings, axis=0)
+        avg_distance = cosine(query_embedding, average_embedding)
+        matched = avg_distance <= DISTANCE_THRESHOLD
+
+        return jsonify({
+            "matched": matched,
+            "matched_by": "average_only",
+            "avg_distance": avg_distance,
+            "query_embedding": query_embedding,
+            "average_embedding": average_embedding.tolist(),
+            "stored_embeddings": embeddings,
+            "employee": {
+                "employee_id": employee_record.get("employee_id"),
+                "employee_name": employee_record.get("employee_name"),
+                "employee_email": employee_record.get("employee_email"),
+                "employee_branch_id": employee_record.get("employee_branch_id"),
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "matched": False,
+            "message": "Failed to compute average embedding or distance.",
+            "details": str(e),
+            "avg_distance": None,
+            "query_embedding": query_embedding,
+            "average_embedding": None,
+            "stored_embeddings": embeddings,
+            "employee": {
+                "employee_id": employee_record.get("employee_id"),
+                "employee_name": employee_record.get("employee_name"),
+                "employee_email": employee_record.get("employee_email"),
+                "employee_branch_id": employee_record.get("employee_branch_id"),
+            }
+        }), 500
