@@ -117,7 +117,7 @@ def represent():
     # )
 
     obj = DeepFace.represent(
-                img_path=temp_input_path,
+                img_path=img,
                 model_name="Facenet",
                 detector_backend="opencv",
                 enforce_detection=False
