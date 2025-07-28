@@ -120,7 +120,7 @@ def represent():
                 img_path=img,
                 model_name="Facenet",
                 detector_backend="opencv",
-                enforce_detection=False
+                enforce_detection=True
             )
     logger.debug(obj)
 
