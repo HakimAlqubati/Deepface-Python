@@ -566,7 +566,7 @@ def recognize_by_average_distance():
     })
 
 
-DISTANCE_THRESHOLD = 0.40
+DISTANCE_THRESHOLD = 0.356
 DISTANCE_MARGIN = 0.03  # الحد الأدنى للفارق بين الأقرب والثاني
 
 @api_blueprint.route("/recognize-by-precise-match", methods=["POST"])
