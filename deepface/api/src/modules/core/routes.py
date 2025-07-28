@@ -587,6 +587,7 @@ def recognize_by_precise_match():
             detector_backend="opencv",
             enforce_detection=False
         )[0]['embedding']
+        print("Query embedding:", query_embedding)
     except Exception as e:
         os.remove(temp_input_path)
         return jsonify({"error": "Failed to extract embedding", "details": str(e)}), 500
