@@ -591,13 +591,15 @@ def recognize_by_precise_match():
         confidence = query[0]['face_confidence']
         print("Query embedding:", query_embedding)
         print("Query confidence:", confidence)
-        if confidence < 0.80:
-            raise Exception("Face confidence too low. Please provide a clearer image.")
     except Exception as e:
         os.remove(temp_input_path)
         return jsonify({"error": "Failed to extract embedding", "details": str(e)}), 500
     finally:
         os.remove(temp_input_path)
+
+        if confidence < 0.80:
+            return jsonify({"error": "Face confidence too low. Please provide a clearer image."}), 500
+
 
     try:
         response = requests.get("https://workbench.ressystem.com/api/face-data", timeout=10)
