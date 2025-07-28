@@ -106,22 +106,16 @@ def represent():
     except Exception as err:
         return {"exception": str(err)}, 400
 
-    # obj = service.represent(
-    #     img_path=img,
-    #     model_name=input_args.get("model_name", "VGG-Face"),
-    #     detector_backend=input_args.get("detector_backend", "opencv"),
-    #     enforce_detection=input_args.get("enforce_detection", True),
-    #     align=input_args.get("align", True),
-    #     anti_spoofing=True,
-    #     max_faces=input_args.get("max_faces"),
-    # )
+    obj = service.represent(
+        img_path=img,
+        model_name=input_args.get("model_name", "VGG-Face"),
+        detector_backend=input_args.get("detector_backend", "opencv"),
+        enforce_detection=input_args.get("enforce_detection", True),
+        align=input_args.get("align", True),
+        anti_spoofing=True,
+        max_faces=input_args.get("max_faces"),
+    )
 
-    obj = DeepFace.represent(
-                img_path=img,
-                model_name="Facenet",
-                detector_backend="opencv",
-                enforce_detection=True
-            )
     logger.debug(obj)
 
     return obj
@@ -587,13 +581,16 @@ def recognize_by_precise_match():
         temp_input_path = temp_input.name
 
     try:
-        query_embedding = DeepFace.represent(
+        query = DeepFace.represent(
             img_path=temp_input_path,
             model_name="Facenet",
             detector_backend="opencv",
             enforce_detection=False
-        )[0]['embedding']
+        )
+        query_embedding = query[0]['embedding']
+        confidence = query[0]['face_confidence']
         print("Query embedding:", query_embedding)
+        print("Query confidence:", confidence)
     except Exception as e:
         os.remove(temp_input_path)
         return jsonify({"error": "Failed to extract embedding", "details": str(e)}), 500
