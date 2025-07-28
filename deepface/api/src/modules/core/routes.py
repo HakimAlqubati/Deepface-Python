@@ -655,6 +655,6 @@ def recognize_by_precise_match():
         "best_match": best_serialized if matched else None,
         "threshold": DISTANCE_THRESHOLD,
         "margin_required": DISTANCE_MARGIN,
-        "query_embedding": [float(x) for x in query_embedding],
+        # "query_embedding": [float(x) for x in query_embedding],
         "all_results": all_serialized
     })
