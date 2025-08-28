@@ -10,7 +10,7 @@ liveness_blueprint = Blueprint('liveness', __name__)
 def analyze_frame(frame):
     faces = detection.extract_faces(
         img_path=frame,
-        detector_backend="mediapipe",
+        detector_backend="opencv",
         enforce_detection=False,
         align=True,
         anti_spoofing=True
