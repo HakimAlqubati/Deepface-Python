@@ -24,6 +24,7 @@ def _ensure_rgb(img):
     return img
 
 def _boost_for_detection(rgb):
+    # تحسين خفيف: تصحيح جاما + زيادة وضوح طفيفة + تكبير لو الصورة صغيرة
     rgb_f = rgb.astype(np.float32) / 255.0
     m = float(rgb_f.mean())
     gamma = 0.8 if m < 0.35 else (1.2 if m > 0.7 else 1.0)
@@ -39,6 +40,8 @@ def _boost_for_detection(rgb):
 
 def _to_base64(img_rgb, fmt="JPEG", max_side=384):
     # تصغير بسيط عشان حجم الاستجابة ما يكبر
+    if img_rgb is None:
+        return None
     h, w = img_rgb.shape[:2]
     s = max(h, w)
     if s > max_side:
@@ -72,19 +75,44 @@ def analyze_frame(frame, anti_spoof=True):
                 face_arr = best.get("face")
                 face_rgb = (face_arr * 255).astype(np.uint8) if face_arr is not None else None
 
+                # مقاومة التزييف (اختياري)
                 liveness = None
                 if anti_spoof:
                     try:
+                        # جرّب أولاً على الوجه المقصوص إن توفر، وإلا استخدم الإطار
+                        live_input = face_rgb if face_rgb is not None else rgb
                         live_res = DeepFace.extract_faces(
-                            img_path=rgb,
+                            img_path=live_input,
                             detector_backend=be,
                             enforce_detection=False,
                             align=True,
                             anti_spoofing=True
                         )
                         if live_res and isinstance(live_res, list):
-                            # بعض الإصدارات تعيد dict فيه "liveness" أو "score"
-                            liveness = live_res[0].get("liveness", None)
+                            lr = live_res[0] or {}
+                            # بعض الإصدارات تُرجع 'liveness' (bool) و/أو 'score' و'threshold'
+                            live_bool = None
+                            live_score = None
+                            threshold = float(lr.get("threshold", 0.85))
+
+                            if "score" in lr and lr.get("score") is not None:
+                                # إذا توفر score نستخدمه مع العتبة
+                                live_score = float(lr.get("score"))
+                                live_bool = live_score >= threshold
+                            # مفاتيح بديلة للـ bool
+                            for key in ("liveness", "is_real", "real"):
+                                if key in lr and isinstance(lr[key], (bool, np.bool_)):
+                                    live_bool = bool(lr[key])
+                                    break
+
+                            liveness = {
+                                "is_live": live_bool,
+                                "score": live_score,
+                                "threshold": threshold,
+                                "raw": {k: lr.get(k) for k in ("liveness","is_real","real","score","threshold")}
+                            }
+                        else:
+                            liveness = None
                     except Exception as _:
                         # لا نفشل الكشف بسببها
                         liveness = None
@@ -94,9 +122,9 @@ def analyze_frame(frame, anti_spoof=True):
                     "backend": be,
                     "confidence": float(best.get("confidence") or 0.0),
                     "box": best.get("facial_area"),
-                    "liveness": liveness,
                     # اختياري: قص الوجه كـ base64 للاختبار/المعاينة
                     "face_thumb_b64": _to_base64(face_rgb) if face_rgb is not None else None,
+                    "liveness": liveness,
                 }
         except Exception as e:
             last_err = e
