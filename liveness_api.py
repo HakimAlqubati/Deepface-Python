@@ -3,30 +3,36 @@
 from flask import Blueprint, request, jsonify
 import cv2
 import numpy as np
+import logging
+
 from deepface.modules import detection
 
 liveness_blueprint = Blueprint('liveness', __name__)
 
 def analyze_frame(frame):
-    faces = detection.extract_faces(
-        img_path=frame,
-        detector_backend="opencv",
-        enforce_detection=False,
-        align=True,
-        anti_spoofing=True
-    )
-    if faces:
-        face = faces[0]
-        is_real = face.get("is_real", False)
-        score = face.get("antispoof_score", 0)
-        landmarks = face.get("landmarks", {})
-        return {
-            "liveness": bool(is_real),
-            "score": float(score),
-            "landmarks": landmarks
-        }
-    return None
-
+    try:
+        faces = detection.extract_faces(
+            img_path=frame,
+            detector_backend="mediapipe",
+            enforce_detection=False,
+            align=True,
+            anti_spoofing=True
+        )
+        return faces[0] if faces else None
+    except Exception as e:
+        logging.exception("extract_faces failed")
+        # fallback بدون anti_spoofing
+        try:
+            faces = detection.extract_faces(
+                img_path=frame,
+                detector_backend="mediapipe",
+                enforce_detection=False,
+                align=True,
+                anti_spoofing=False
+            )
+            return faces[0] if faces else None
+        except Exception:
+            return None
 @liveness_blueprint.route("/liveness", methods=["POST"])
 def analyze():
     file = request.files['image']
