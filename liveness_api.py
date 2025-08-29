@@ -11,7 +11,7 @@ def analyze_frame(frame):
     faces = detection.extract_faces(
         img_path=frame,
         detector_backend="opencv",
-        enforce_detection=False,
+        enforce_detection=true,
         align=True,
         anti_spoofing=True
     )
